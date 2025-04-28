@@ -4,7 +4,7 @@ CPPpred-En is an ensemble-based prediction model for identifying cell-penetratin
 
 
 ## Model workflow
-(./image/Figure.png)
+![Figure](./image/Figure.png)
 
 ## Installation Guide
 
