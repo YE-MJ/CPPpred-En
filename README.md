@@ -31,6 +31,23 @@ MLCPP2.0: Download Standalone Version of [MLCPP2.0](https://balalab-skku.org/mlc
 
 ## Usage
 
+To extract conventional features, please refer to [iFeatureOmega](https://github.com/Superzchen/iFeatureOmega-CLI).
+
+To extract PLM features, please run the Python scripts provided in the `PLM_extraction` directory.  *Note: Downloading the pretrained weights for the PLM may take some time.*
+
+For example:
+```bash
+python PLM_extraction/esm1b.py
+```
+
+To train the models, please run the machine learning classifier scripts located in the `train/conventional_feature` and `train/PLM_feature` directories.
+
+Example:
+```bash
+python train/conventional_feature/GB_model.py
+python train/PLM_feature/GB_model.py
+```
+
 How to run the CPP924(balance) dataset using the pre-trained weights:
 
 ```bash
@@ -42,6 +59,8 @@ How to run the MLCPP2.0(imbalance) set using the pre-trained weights:
 ```bash
 python imbalance_data_test.py
 ```
+
+Inference time: The model performs predictions efficiently, typically completing inference within 5~15 seconds, depending on the dataset size and system specifications.
 
 ## Author
 
