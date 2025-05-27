@@ -1,22 +1,23 @@
 import os
 import pandas as pd
-from sklearn.model_selection import RandomizedSearchCV
+from sklearn.model_selection import RandomizedSearchCV, cross_val_predict
 from sklearn.ensemble import ExtraTreesClassifier
-from sklearn.metrics import matthews_corrcoef, accuracy_score, make_scorer, confusion_matrix, roc_auc_score
-from scipy.stats import randint
+from sklearn.metrics import matthews_corrcoef, accuracy_score, confusion_matrix, make_scorer
+from scipy.stats import randint, uniform
 import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 input_directory_path = "./All_feature/data_CPP_train/"
-test_path = "./All_feature/data_CPP_test/"
+
 
 mcc_values_ert = []
 accuracy_values_ert = []
 specificity_values_ert = []
 sensitivity_values_ert = []
-aucroc_values_ert = []
 best_params_list_ert = []
+best_mcc_list_ert = []
+best_accuracy_list_ert = []
 dataset_names = []
 
 csv_files = [f for f in os.listdir(input_directory_path) if f.endswith(".csv")]
@@ -24,21 +25,12 @@ csv_files = [f for f in os.listdir(input_directory_path) if f.endswith(".csv")]
 for file_name in csv_files:
     file_path = os.path.join(input_directory_path, file_name)
     dataset_names.append(file_name) 
-
-    test_file_path = os.path.join(test_path, file_name)
-    
-    if not os.path.exists(test_file_path):
-        print(f"Test file '{test_file_path}' does not exist. Skipping this dataset.")
-        continue
     
     df = pd.read_csv(file_path)
-    test_df = pd.read_csv(test_file_path)
 
     X = df.drop(['name', 'target'], axis=1)
     y = df['target']
-    X_test = test_df.drop(['name', 'target'], axis=1)
-    y_test = test_df['target']
-    
+
     model_ert = ExtraTreesClassifier()
 
     param_distributions_ert = {
@@ -48,45 +40,35 @@ for file_name in csv_files:
         'min_samples_leaf': [1, 2, 4],
         'bootstrap': [True, False]
     }
-    
     mcc_scorer = make_scorer(matthews_corrcoef)
     
-    random_search_ert = RandomizedSearchCV(model_ert, param_distributions_ert, n_iter=100, scoring=mcc_scorer, cv=5, random_state=42, n_jobs=-1)
-    
+    random_search_ert = RandomizedSearchCV(model_ert, param_distributions_ert, n_iter=100, scoring=mcc_scorer, cv=5, verbose=1, n_jobs=-1, random_state=42)
     random_search_ert.fit(X, y)
-    
-    best_model_ert = random_search_ert.best_estimator_
-    y_test_pred_ert = best_model_ert.predict(X_test)
-    
-    y_test_proba_ert = best_model_ert.predict_proba(X_test)[:, 1]
 
-    mcc_ert = matthews_corrcoef(y_test, y_test_pred_ert)
-    accuracy_ert = accuracy_score(y_test, y_test_pred_ert)
-    tn, fp, fn, tp = confusion_matrix(y_test, y_test_pred_ert).ravel()
+    best_model_ert = random_search_ert.best_estimator_
+    y_pred_ert = cross_val_predict(best_model_ert, X, y, cv=5)
+    
+    mcc_ert = matthews_corrcoef(y, y_pred_ert)
+    mcc_values_ert.append(mcc_ert)
+
+    accuracy_ert = accuracy_score(y, y_pred_ert)
+    accuracy_values_ert.append(accuracy_ert)
+
+    tn, fp, fn, tp = confusion_matrix(y, y_pred_ert).ravel()
     specificity = tn / (tn + fp)
     sensitivity = tp / (tp + fn)
-    aucroc_ert = roc_auc_score(y_test, y_test_proba_ert)
-    
-    mcc_values_ert.append(mcc_ert)
-    accuracy_values_ert.append(accuracy_ert)
     specificity_values_ert.append(specificity)
     sensitivity_values_ert.append(sensitivity)
-    aucroc_values_ert.append(aucroc_ert)
-    best_params_list_ert.append(str(random_search_ert.best_params_)) 
 
-    print(f"Test File '{test_file_path}' evaluated. MCC: {mcc_ert}, Accuracy: {accuracy_ert}, AUC-ROC: {aucroc_ert}, Best Params: {random_search_ert.best_params_}")
+    best_params_list_ert.append(random_search_ert.best_params_)
+    best_mcc_list_ert.append(mcc_ert)
+    best_accuracy_list_ert.append(accuracy_ert)
 
-output_df = pd.DataFrame({
-    'Dataset': dataset_names,
-    'Best Params': best_params_list_ert,
-    'MCC': mcc_values_ert,
-    'Accuracy': accuracy_values_ert,
-    'Specificity': specificity_values_ert,
-    'Sensitivity': sensitivity_values_ert,
-    'AUC-ROC': aucroc_values_ert
-})
+    print(f"File '{file_path}' MCC (ERT): {mcc_ert}, Accuracy (ERT): {accuracy_ert}, Best Params (ERT): {random_search_ert.best_params_}")
 
-output_file_path = "./extratrees_feature_CPP.csv"
-output_df.to_csv(output_file_path, index=False)
+output_file_path = "./extratrees_feature_CPP.txt"
+with open(output_file_path, 'w') as f:
+    for dataset, params_ert, mcc_ert, accuracy_ert, spec_ert, sens_ert in zip(dataset_names, best_params_list_ert, best_mcc_list_ert, accuracy_values_ert, specificity_values_ert, sensitivity_values_ert):
+        f.write(f"Dataset: {dataset}\nParams: {params_ert}\nMCC: {mcc_ert}\nAccuracy: {accuracy_ert}\nSpecificity: {spec_ert}\nSensitivity: {sens_ert}\n\n")
 
-print(f"Results saved to '{output_file_path}'")
+print(f"MCC, Accuracy, Specificity, and Sensitivity values and best parameters for ERT saved to '{output_file_path}'")

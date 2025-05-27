@@ -1,22 +1,21 @@
 import os
 import pandas as pd
-from sklearn.model_selection import RandomizedSearchCV
+from sklearn.model_selection import RandomizedSearchCV, cross_val_predict
 from lightgbm import LGBMClassifier
-from sklearn.metrics import matthews_corrcoef, accuracy_score, make_scorer, confusion_matrix, roc_auc_score
-from scipy.stats import randint
+from sklearn.metrics import matthews_corrcoef, accuracy_score, confusion_matrix, make_scorer
+from scipy.stats import randint, uniform
 import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning)
-
 input_directory_path = "./All_feature/data_CPP_train/"
-test_path = "./All_feature/data_CPP_test/"
 
 mcc_values_lgbm = []
 accuracy_values_lgbm = []
 specificity_values_lgbm = []
 sensitivity_values_lgbm = []
-aucroc_values_lgbm = []
 best_params_list_lgbm = []
+best_mcc_list_lgbm = []
+best_accuracy_list_lgbm = []
 dataset_names = []
 
 csv_files = [f for f in os.listdir(input_directory_path) if f.endswith(".csv")]
@@ -25,21 +24,12 @@ for file_name in csv_files:
     file_path = os.path.join(input_directory_path, file_name)
     dataset_names.append(file_name) 
 
-    test_file_path = os.path.join(test_path, file_name)
-    
-    if not os.path.exists(test_file_path):
-        print(f"Test file '{test_file_path}' does not exist. Skipping this dataset.")
-        continue
-    
     df = pd.read_csv(file_path)
-    test_df = pd.read_csv(test_file_path)
 
     X = df.drop(['name', 'target'], axis=1)
     y = df['target']
-    X_test = test_df.drop(['name', 'target'], axis=1)
-    y_test = test_df['target']
-    
-    model_lgbm = LGBMClassifier(verbose=-1)
+
+    model_lgbm = LGBMClassifier()
 
     param_distributions_lgbm = {
         'n_estimators': randint(100, 1000),
@@ -53,42 +43,33 @@ for file_name in csv_files:
     
     mcc_scorer = make_scorer(matthews_corrcoef)
     
-    random_search_lgbm = RandomizedSearchCV(model_lgbm, param_distributions_lgbm, n_iter=100, scoring=mcc_scorer, cv=5, random_state=42, n_jobs=-1)
-    
+    random_search_lgbm = RandomizedSearchCV(model_lgbm, param_distributions_lgbm, n_iter=100, scoring=mcc_scorer, cv=5, verbose=1, n_jobs=-1, random_state=42)
     random_search_lgbm.fit(X, y)
-
-    best_model_lgbm = random_search_lgbm.best_estimator_
-    y_test_pred_lgbm = best_model_lgbm.predict(X_test)
     
-    y_test_proba_lgbm = best_model_lgbm.predict_proba(X_test)[:, 1]
+    best_model_lgbm = random_search_lgbm.best_estimator_
+    y_pred_lgbm = cross_val_predict(best_model_lgbm, X, y, cv=5)
+    
+    mcc_lgbm = matthews_corrcoef(y, y_pred_lgbm)
+    mcc_values_lgbm.append(mcc_lgbm)
 
-    mcc_lgbm = matthews_corrcoef(y_test, y_test_pred_lgbm)
-    accuracy_lgbm = accuracy_score(y_test, y_test_pred_lgbm)
-    tn, fp, fn, tp = confusion_matrix(y_test, y_test_pred_lgbm).ravel()
+    accuracy_lgbm = accuracy_score(y, y_pred_lgbm)
+    accuracy_values_lgbm.append(accuracy_lgbm)
+    
+    tn, fp, fn, tp = confusion_matrix(y, y_pred_lgbm).ravel()
     specificity = tn / (tn + fp)
     sensitivity = tp / (tp + fn)
-    aucroc_lgbm = roc_auc_score(y_test, y_test_proba_lgbm)
-    
-    mcc_values_lgbm.append(mcc_lgbm)
-    accuracy_values_lgbm.append(accuracy_lgbm)
     specificity_values_lgbm.append(specificity)
     sensitivity_values_lgbm.append(sensitivity)
-    aucroc_values_lgbm.append(aucroc_lgbm)
-    best_params_list_lgbm.append(str(random_search_lgbm.best_params_)) 
 
-    print(f"Test File '{test_file_path}' evaluated. MCC: {mcc_lgbm}, Accuracy: {accuracy_lgbm}, AUC-ROC: {aucroc_lgbm}, Best Params: {random_search_lgbm.best_params_}")
+    best_params_list_lgbm.append(random_search_lgbm.best_params_)
+    best_mcc_list_lgbm.append(mcc_lgbm)
+    best_accuracy_list_lgbm.append(accuracy_lgbm)
 
-output_df = pd.DataFrame({
-    'Dataset': dataset_names,
-    'Best Params': best_params_list_lgbm,
-    'MCC': mcc_values_lgbm,
-    'Accuracy': accuracy_values_lgbm,
-    'Specificity': specificity_values_lgbm,
-    'Sensitivity': sensitivity_values_lgbm,
-    'AUC-ROC': aucroc_values_lgbm
-})
+    print(f"File '{file_path}' MCC (LightGBM): {mcc_lgbm}, Accuracy (LightGBM): {accuracy_lgbm}, Specificity (LightGBM): {specificity}, Sensitivity (LightGBM): {sensitivity}")
 
-output_file_path = "./lgbm_feature_CPP.csv"
-output_df.to_csv(output_file_path, index=False)
+output_file_path = "./lgbm_feature_CPP.txt"
+with open(output_file_path, 'w', encoding='utf-8') as f:
+    for dataset, params, mcc, accuracy, spec, sens in zip(dataset_names, best_params_list_lgbm, best_mcc_list_lgbm, accuracy_values_lgbm, specificity_values_lgbm, sensitivity_values_lgbm):
+        f.write(f"Dataset: {dataset}\nParams: {params}\nMCC: {mcc}\nAccuracy: {accuracy}\nSpecificity: {spec}\nSensitivity: {sens}\n\n")
 
-print(f"Results saved to '{output_file_path}'")
+print(f"MCC, Accuracy, Specificity, Sensitivity 값 및 최적 파라미터를 '{output_file_path}'에 저장하였습니다.")

@@ -1,44 +1,34 @@
 import os
 import pandas as pd
-from sklearn.model_selection import RandomizedSearchCV
+from sklearn.model_selection import RandomizedSearchCV, cross_val_predict
 from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.metrics import matthews_corrcoef, accuracy_score, make_scorer, confusion_matrix, roc_auc_score
-from scipy.stats import randint
+from sklearn.metrics import matthews_corrcoef, accuracy_score, confusion_matrix, make_scorer
+from scipy.stats import randint, uniform
 import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning)
-
 input_directory_path = "./All_feature/data_CPP_train/"
-test_path = "./All_feature/data_CPP_test/"
 
 mcc_values_gb = []
 accuracy_values_gb = []
 specificity_values_gb = []
 sensitivity_values_gb = []
-aucroc_values_gb = []
 best_params_list_gb = []
+best_mcc_list_gb = []
+best_accuracy_list_gb = []
 dataset_names = []
 
 csv_files = [f for f in os.listdir(input_directory_path) if f.endswith(".csv")]
 
 for file_name in csv_files:
     file_path = os.path.join(input_directory_path, file_name)
-    dataset_names.append(file_name)
-
-    test_file_path = os.path.join(test_path, file_name)
-    
-    if not os.path.exists(test_file_path):
-        print(f"Test file '{test_file_path}' does not exist. Skipping this dataset.")
-        continue
+    dataset_names.append(file_name) 
     
     df = pd.read_csv(file_path)
-    test_df = pd.read_csv(test_file_path)
 
     X = df.drop(['name', 'target'], axis=1)
     y = df['target']
-    X_test = test_df.drop(['name', 'target'], axis=1)
-    y_test = test_df['target']
-    
+
     model_gb = GradientBoostingClassifier()
 
     param_distributions_gb = {
@@ -51,41 +41,33 @@ for file_name in csv_files:
     
     mcc_scorer = make_scorer(matthews_corrcoef)
     
-    random_search_gb = RandomizedSearchCV(model_gb, param_distributions_gb, n_iter=100, scoring=mcc_scorer, cv=5, random_state=42, n_jobs=-1)
-
+    random_search_gb = RandomizedSearchCV(model_gb, param_distributions_gb, n_iter=100, scoring=mcc_scorer, cv=5, verbose=1, n_jobs=-1, random_state=42)
     random_search_gb.fit(X, y)
 
     best_model_gb = random_search_gb.best_estimator_
-    y_test_pred_gb = best_model_gb.predict(X_test)
+    y_pred_gb = cross_val_predict(best_model_gb, X, y, cv=5)
     
-    y_test_proba_gb = best_model_gb.predict_proba(X_test)[:, 1]
+    mcc_gb = matthews_corrcoef(y, y_pred_gb)
+    mcc_values_gb.append(mcc_gb)
 
-    mcc_gb = matthews_corrcoef(y_test, y_test_pred_gb)
-    accuracy_gb = accuracy_score(y_test, y_test_pred_gb)
-    tn, fp, fn, tp = confusion_matrix(y_test, y_test_pred_gb).ravel()
+    accuracy_gb = accuracy_score(y, y_pred_gb)
+    accuracy_values_gb.append(accuracy_gb)
+
+    tn, fp, fn, tp = confusion_matrix(y, y_pred_gb).ravel()
     specificity = tn / (tn + fp)
     sensitivity = tp / (tp + fn)
-    aucroc_gb = roc_auc_score(y_test, y_test_proba_gb)
-    
-    mcc_values_gb.append(mcc_gb)
-    accuracy_values_gb.append(accuracy_gb)
     specificity_values_gb.append(specificity)
     sensitivity_values_gb.append(sensitivity)
-    aucroc_values_gb.append(aucroc_gb)
-    best_params_list_gb.append(str(random_search_gb.best_params_)) 
-    print(f"Test File '{test_file_path}' evaluated. MCC: {mcc_gb}, Accuracy: {accuracy_gb}, AUC-ROC: {aucroc_gb}, Best Params: {random_search_gb.best_params_}")
 
-output_df = pd.DataFrame({
-    'Dataset': dataset_names,
-    'Best Params': best_params_list_gb,
-    'MCC': mcc_values_gb,
-    'Accuracy': accuracy_values_gb,
-    'Specificity': specificity_values_gb,
-    'Sensitivity': sensitivity_values_gb,
-    'AUC-ROC': aucroc_values_gb
-})
+    best_params_list_gb.append(random_search_gb.best_params_)
+    best_mcc_list_gb.append(mcc_gb)
+    best_accuracy_list_gb.append(accuracy_gb)
 
-output_file_path = "./gradientboosting_feature_CPP.csv"
-output_df.to_csv(output_file_path, index=False)
+    print(f"File '{file_path}' MCC (GB): {mcc_gb}, Accuracy (GB): {accuracy_gb}, Specificity (GB): {specificity}, Sensitivity (GB): {sensitivity}")
 
-print(f"Results saved to '{output_file_path}'")
+output_file_path = "./gradientboosting_feature_CPP.txt"
+with open(output_file_path, 'w') as f:
+    for dataset, params_gb, mcc_gb, accuracy_gb, spec_gb, sens_gb in zip(dataset_names, best_params_list_gb, best_mcc_list_gb, accuracy_values_gb, specificity_values_gb, sensitivity_values_gb):
+        f.write(f"Dataset: {dataset}\nParams: {params_gb}\nMCC: {mcc_gb}\nAccuracy: {accuracy_gb}\nSpecificity: {spec_gb}\nSensitivity: {sens_gb}\n\n")
+
+print(f"MCC, Accuracy, Specificity, and Sensitivity values and best parameters for GB saved to '{output_file_path}'")

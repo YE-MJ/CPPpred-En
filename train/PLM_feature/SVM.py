@@ -1,45 +1,35 @@
 import os
 import pandas as pd
-from sklearn.model_selection import RandomizedSearchCV
+from sklearn.model_selection import RandomizedSearchCV, cross_val_predict
 from sklearn.svm import SVC
-from sklearn.metrics import matthews_corrcoef, accuracy_score, make_scorer, confusion_matrix, roc_auc_score
-from scipy.stats import uniform
+from sklearn.metrics import matthews_corrcoef, accuracy_score, confusion_matrix, make_scorer
+from scipy.stats import uniform, randint
 import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning)
-
 input_directory_path = "./All_feature/CPP_embedding_train/"
-test_path = "./All_feature/CPP_embedding_test/"
 
 mcc_values_svc = []
 accuracy_values_svc = []
 specificity_values_svc = []
 sensitivity_values_svc = []
-aucroc_values_svc = []
 best_params_list_svc = []
+best_mcc_list_svc = []
+best_accuracy_list_svc = []
 dataset_names = []
 
 csv_files = [f for f in os.listdir(input_directory_path) if f.endswith(".csv")]
 
 for file_name in csv_files:
     file_path = os.path.join(input_directory_path, file_name)
-    dataset_names.append(file_name) 
-
-    test_file_path = os.path.join(test_path, file_name)
-    
-    if not os.path.exists(test_file_path):
-        print(f"Test file '{test_file_path}' does not exist. Skipping this dataset.")
-        continue
+    dataset_names.append(file_name)
 
     df = pd.read_csv(file_path)
-    test_df = pd.read_csv(test_file_path)
 
     X = df.drop(['name', 'target'], axis=1)
     y = df['target']
-    X_test = test_df.drop(['name', 'target'], axis=1)
-    y_test = test_df['target']
-    
-    model_svc = SVC(probability=True)
+
+    model_svc = SVC()
 
     param_distributions_svc = {
         'C': uniform(0.1, 10),
@@ -47,44 +37,37 @@ for file_name in csv_files:
         'kernel': ['linear', 'rbf']
     }
     
+    
     mcc_scorer = make_scorer(matthews_corrcoef)
     
-    random_search_svc = RandomizedSearchCV(model_svc, param_distributions_svc, n_iter=100, scoring=mcc_scorer, cv=5, random_state=42)
-    
+    random_search_svc = RandomizedSearchCV(model_svc, param_distributions_svc, n_iter=100, scoring=mcc_scorer, cv=5, verbose=1, n_jobs=-1, random_state=42)
     random_search_svc.fit(X, y)
-    
+
     best_model_svc = random_search_svc.best_estimator_
-    y_test_pred_svc = best_model_svc.predict(X_test)
-    
-    y_test_proba_svc = best_model_svc.predict_proba(X_test)[:, 1]
+    y_pred_svc = cross_val_predict(best_model_svc, X, y, cv=5)
 
-    mcc_svc = matthews_corrcoef(y_test, y_test_pred_svc)
-    accuracy_svc = accuracy_score(y_test, y_test_pred_svc)
-    tn, fp, fn, tp = confusion_matrix(y_test, y_test_pred_svc).ravel()
-    specificity = tn / (tn + fp)
-    sensitivity = tp / (tp + fn)
-    aucroc_svc = roc_auc_score(y_test, y_test_proba_svc)
-    
+    cm = confusion_matrix(y, y_pred_svc)
+    tn, fp, fn, tp = cm.ravel()
+
+    mcc_svc = matthews_corrcoef(y, y_pred_svc)
     mcc_values_svc.append(mcc_svc)
+
+    accuracy_svc = accuracy_score(y, y_pred_svc)
     accuracy_values_svc.append(accuracy_svc)
+
+    specificity = tn / (tn + fp)
     specificity_values_svc.append(specificity)
+
+    sensitivity = tp / (tp + fn)
     sensitivity_values_svc.append(sensitivity)
-    aucroc_values_svc.append(aucroc_svc)
-    best_params_list_svc.append(str(random_search_svc.best_params_)) 
 
-    print(f"Test File '{test_file_path}' evaluated. MCC: {mcc_svc}, Accuracy: {accuracy_svc}, AUC-ROC: {aucroc_svc}, Best Params: {random_search_svc.best_params_}")
+    best_params_list_svc.append(random_search_svc.best_params_)
 
-output_df = pd.DataFrame({
-    'Dataset': dataset_names,
-    'Best Params': best_params_list_svc,
-    'MCC': mcc_values_svc,
-    'Accuracy': accuracy_values_svc,
-    'Specificity': specificity_values_svc,
-    'Sensitivity': sensitivity_values_svc,
-    'AUC-ROC': aucroc_values_svc
-})
+    print(f"파일 '{file_path}' MCC (SVC): {mcc_svc}, Accuracy (SVC): {accuracy_svc}, Specificity (Specificity): {specificity}, Sensitivity (Sensitivity): {sensitivity}")
 
-output_file_path = "./svc_feature_CPP_embedding.csv"
-output_df.to_csv(output_file_path, index=False)
+output_file_path = "./svc_feature_CPP_embedding.txt"
+with open(output_file_path, 'w') as f:
+    for dataset, params_svc, mcc_svc, accuracy_svc, specificity_svc, sensitivity_svc in zip(dataset_names, best_params_list_svc, mcc_values_svc, accuracy_values_svc, specificity_values_svc, sensitivity_values_svc):
+        f.write(f"Dataset: {dataset}\nParams: {params_svc}\nMCC: {mcc_svc}\nAccuracy: {accuracy_svc}\nSpecificity: {specificity_svc}\nSensitivity: {sensitivity_svc}\n\n")
 
-print(f"Results saved to '{output_file_path}'")
+print(f"MCC, Accuracy, Specificity, Sensitivity 값 및 최적 파라미터를 '{output_file_path}'에 저장하였습니다.")
