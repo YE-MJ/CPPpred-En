@@ -60,7 +60,12 @@ How to run the MLCPP2.0(imbalance) set using the pre-trained weights:
 python imbalance_data_test.py
 ```
 
-Inference time: The model performs predictions efficiently, typically completing inference within 5~15 seconds, depending on the dataset size and system specifications.
+Inference time:
+The model performs predictions efficiently, with inference time varying depending on the dataset size and system specifications. The measured inference times are as follows:
+
+    CPP929 dataset: 3.66 ± 0.15 seconds
+
+    MLCPP 2.0 dataset: 12.20 ± 0.16 seconds
 
 ## Author
 
